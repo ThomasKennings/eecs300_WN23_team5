@@ -96,10 +96,10 @@ void loop() {
   old_deriv_2 = deriv_2;
   deriv_1 = dist_1 - old_dist_1;
   deriv_2 = dist_2 - old_dist_2;
-  second_deriv_1 = deriv_arr_avg_1 - old_deriv_arr_avg_1;
-  second_deriv_2 = deriv_arr_avg_1 - old_deriv_arr_avg_2;
+  // second_deriv_1 = deriv_arr_avg_1 - old_deriv_arr_avg_1;
+  // second_deriv_2 = deriv_arr_avg_1 - old_deriv_arr_avg_2;
 
-  // Moving average filter applied to derivative measurements
+  // Moving average filter applied to first derivatives
   deriv_arr_1[num_cycles % deriv_arr_length] = deriv_1;
   deriv_arr_2[num_cycles % deriv_arr_length] = deriv_2;
   old_deriv_arr_avg_1 = deriv_arr_avg_1;
@@ -111,8 +111,8 @@ void loop() {
     deriv_arr_avg_2 += deriv_arr_2[i] / (deriv_arr_length*1.0);
   }
 
+  // Accumulator logic
   if ((millis() - last_occupant_millis_1) > debounce_time_millis) {
-    // Accumulator Logic
     if (deriv_arr_avg_1 > deriv_accumulation_threshold) {
       ++accumulator_pos_1;
     }
@@ -127,6 +127,7 @@ void loop() {
     }
   }
 
+  // Occupancy event logic
   if (accumulator_pos_1 > accumulator_threshold) {
     ++occupancy;
     accumulator_pos_1 = 0;
@@ -138,7 +139,7 @@ void loop() {
     last_occupant_millis_1 = millis();
   }
 
-  // Resets debounce if deriv switches signs or is slow
+  // Debounce cancellation
   if (abs(deriv_arr_avg_1) < deriv_debounce_threshold) {
     last_occupant_millis_1 = 0;
   }
