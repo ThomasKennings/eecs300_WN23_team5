@@ -1,27 +1,43 @@
 #include "Adafruit_VL53L1X.h"
 
-#define GPIO_PIN_1 25
-#define XSHUT_PIN_1 26
+// Const Parameters
+const int GPIO_PIN_1 = 25;                      // beware communication, etc. pins on the ESP32
+const int XSHUT_PIN_1 = 26;
+const int GPIO_PIN_2 = 32;
+const int XSHUT_PIN_2 = 33;
+const int deriv_arr_length = 10;                // longer array rejects noise but creates lag
+const int tof_1_timing_budget = 20;             // Valid timing budgets: 15, 20, 33, 50, 100, 200 and 500 (ms)
+const int tof_2_timing_budget = 20;             // Valid timing budgets: 15, 20, 33, 50, 100, 200 and 500 (ms)
+const double milestone_threshold = 20;          // used for milestone 1 test
+const double deriv_accumulation_threshold = 30; // how high deriv must be to begin accumulation
+const double deriv_debounce_threshold = 10;     // if deriv is below this, debounce is cancelled
+const int accumulator_threshold = 60;           // how high accumulators must climb to trigger occupancy change
+const int debounce_time_millis = 5000;          // when occupancy changes, how long to block continued accumulation in the same direction
 
-#define GPIO_PIN_2 32
-#define XSHUT_PIN_2 33
-
-const int deriv_arr_length = 25;    // longer array rejects noise but creates lag
-const int tof_1_timing_budget = 20; // Valid timing budgets: 15, 20, 33, 50, 100, 200 and 500 (ms)
-const int tof_2_timing_budget = 20;
-const double deriv_avg_threshold = 20;
-
+// Variables
 Adafruit_VL53L1X tof_1 = Adafruit_VL53L1X(XSHUT_PIN_1, GPIO_PIN_1);
 Adafruit_VL53L1X tof_2 = Adafruit_VL53L1X(XSHUT_PIN_2, GPIO_PIN_2);
 int16_t temp;
-int16_t distance_1;
-int16_t distance_2;
-int16_t old_distance_1;
-int16_t old_distance_2;
+int16_t dist_1;
+int16_t dist_2;
+int16_t old_dist_1;
+int16_t old_dist_2;
+int16_t deriv_1;
+int16_t deriv_2;
+int16_t old_deriv_1;
+int16_t old_deriv_2;
+double second_deriv_1;
+double second_deriv_2;
+double old_deriv_arr_avg_1;
+double old_deriv_arr_avg_2;
 double deriv_arr_1[deriv_arr_length];
 double deriv_arr_2[deriv_arr_length];
-double deriv_arr_1_avg;
-double deriv_arr_2_avg;
+double deriv_arr_avg_1;
+double deriv_arr_avg_2;
+int accumulator_pos_1;
+int accumulator_neg_1;
+int occupancy;
+int last_occupant_millis_1;
 int num_cycles = 0;
 
 void setup() {
@@ -57,74 +73,117 @@ void setup() {
 }
 
 void loop() {
+  // Retrieve distance measurements from sensors
   if (tof_1.dataReady()) {
-    old_distance_1 = distance_1;
+    old_dist_1 = dist_1;
     temp = tof_1.distance();
     if (temp != -1) {
-      distance_1 = temp;
+      dist_1 = temp;
     }
     tof_1.clearInterrupt();
   }
-
   if (tof_2.dataReady()) {
-    old_distance_2 = distance_2;
+    old_dist_2 = dist_2;
     temp = tof_2.distance();
     if (temp != -1) {
-      distance_2 = temp;
+      dist_2 = temp;
     }
     tof_2.clearInterrupt();
   }
 
-  deriv_arr_1[num_cycles % deriv_arr_length] = distance_1 - old_distance_1;
-  deriv_arr_2[num_cycles % deriv_arr_length] = distance_2 - old_distance_2;
-  ++num_cycles;
-  deriv_arr_1_avg = 0;
-  deriv_arr_2_avg = 0;
+  // Calculate first and second derivatives
+  old_deriv_1 = deriv_1;
+  old_deriv_2 = deriv_2;
+  deriv_1 = dist_1 - old_dist_1;
+  deriv_2 = dist_2 - old_dist_2;
+  second_deriv_1 = deriv_arr_avg_1 - old_deriv_arr_avg_1;
+  second_deriv_2 = deriv_arr_avg_1 - old_deriv_arr_avg_2;
+
+  // Moving average filter applied to derivative measurements
+  deriv_arr_1[num_cycles % deriv_arr_length] = deriv_1;
+  deriv_arr_2[num_cycles % deriv_arr_length] = deriv_2;
+  old_deriv_arr_avg_1 = deriv_arr_avg_1;
+  old_deriv_arr_avg_2 = deriv_arr_avg_2;
+  deriv_arr_avg_1 = 0;
+  deriv_arr_avg_2 = 0;
   for (int i=0; i<deriv_arr_length; ++i) {
-    deriv_arr_1_avg += deriv_arr_1[i] / (deriv_arr_length*1.0);
-    //Serial.print(deriv_arr_1[i]);
-    //Serial.print(" ");
-    deriv_arr_2_avg += deriv_arr_2[i] / (deriv_arr_length*1.0);
-    //Serial.print(deriv_arr_2[i]);
-    //Serial.print(" ");
+    deriv_arr_avg_1 += deriv_arr_1[i] / (deriv_arr_length*1.0);
+    deriv_arr_avg_2 += deriv_arr_2[i] / (deriv_arr_length*1.0);
   }
 
-/*
-  Serial.print(1000);
+  if ((millis() - last_occupant_millis_1) > debounce_time_millis) {
+    // Accumulator Logic
+    if (deriv_arr_avg_1 > deriv_accumulation_threshold) {
+      ++accumulator_pos_1;
+    }
+    else {
+      accumulator_pos_1 = 0;
+    }
+    if (deriv_arr_avg_1 < -deriv_accumulation_threshold) {
+      ++accumulator_neg_1;
+    }
+    else {
+      accumulator_neg_1 = 0;
+    }
+  }
+
+  if (accumulator_pos_1 > accumulator_threshold) {
+    ++occupancy;
+    accumulator_pos_1 = 0;
+    last_occupant_millis_1 = millis();
+  }
+  if (accumulator_neg_1 > accumulator_threshold) {
+    --occupancy;
+    accumulator_neg_1 = 0;
+    last_occupant_millis_1 = millis();
+  }
+
+  // Resets debounce if deriv switches signs or is slow
+  if (abs(deriv_arr_avg_1) < deriv_debounce_threshold) {
+    last_occupant_millis_1 = 0;
+  }
+
+  // Displaying debug information
+  Serial.print(250);
   Serial.print('\t');
-  Serial.print(-1000);
+  Serial.print(-250);
   Serial.print('\t');
-  Serial.print(distance_1);
+  //Serial.print(dist_1);
+  //Serial.print('\t');
+  Serial.print(deriv_arr_avg_1);
   Serial.print('\t');
-  Serial.print(distance_2);
+  Serial.print(accumulator_pos_1);
   Serial.print('\t');
-  Serial.print(deriv_arr_1_avg);
+  Serial.print(accumulator_neg_1);
   Serial.print('\t');
-  Serial.println(deriv_arr_2_avg);
+  Serial.print(occupancy);
   Serial.println(" ");
-  */
 
-  if (deriv_arr_1_avg > deriv_avg_threshold) {
-    Serial.print(1);
+  // Terminal output for Milestone 1 Test
+  /*
+  if (deriv_arr_1_avg > milestone_threshold) {
+    Serial.print("Sensor 1: Moving away");
   }
-  else if (deriv_arr_1_avg < -deriv_avg_threshold) {
-    Serial.print(-1);
+  else if (deriv_arr_1_avg < -milestone_threshold) {
+    Serial.print("Sensor 1: Moving towards");
   }
   else {
-    Serial.print(0);
+    Serial.print("Sensor 1: No motion");
   }
   Serial.print('\t');
 
-  if (deriv_arr_2_avg > deriv_avg_threshold) {
-    Serial.print(1);
+  if (deriv_arr_2_avg > milestone_threshold) {
+    Serial.print("Sensor 2: Moving away");
   }
-  else if (deriv_arr_2_avg < -deriv_avg_threshold) {
-    Serial.print(-1);
+  else if (deriv_arr_2_avg < -milestone_threshold) {
+    Serial.print("Sensor 2: Moving towards");
   }
   else {
-    Serial.print(0);
+    Serial.print("Sensor 2: No motion");
   }
   Serial.println('\t');
+*/
 
+  ++num_cycles;
   delay(10);
 }
