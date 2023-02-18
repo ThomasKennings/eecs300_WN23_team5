@@ -6,8 +6,8 @@ const int XSHUT_PIN_1 = 26;
 const int GPIO_PIN_2 = 32;
 const int XSHUT_PIN_2 = 33;
 const int deriv_arr_length = 10;                // longer array rejects noise but creates lag
-const int tof_1_timing_budget = 20;             // Valid timing budgets: 15, 20, 33, 50, 100, 200 and 500 (ms)
-const int tof_2_timing_budget = 20;             // Valid timing budgets: 15, 20, 33, 50, 100, 200 and 500 (ms)
+const int tof_1_timing_budget = 100;             // Valid timing budgets: 15, 20, 33, 50, 100, 200 and 500 (ms)
+const int tof_2_timing_budget = 100;             // Valid timing budgets: 15, 20, 33, 50, 100, 200 and 500 (ms)
 const double milestone_threshold = 20;          // used for milestone 1 test
 const double deriv_accumulation_threshold = 30; // how high deriv must be to begin accumulation
 const double deriv_debounce_threshold = 10;     // if deriv is below this, debounce is cancelled
@@ -144,6 +144,7 @@ void loop() {
     last_occupant_millis_1 = 0;
   }
 
+/*
   // Displaying debug information
   Serial.print(250);
   Serial.print('\t');
@@ -159,13 +160,22 @@ void loop() {
   Serial.print('\t');
   Serial.print(occupancy);
   Serial.println(" ");
+  */
 
-  // Terminal output for Milestone 1 Test
+  // Terminal output for Milestone 1 Tests
   /*
-  if (deriv_arr_1_avg > milestone_threshold) {
+  Serial.print("Sensor 1 Reading: ");
+  Serial.print(dist_1);
+  Serial.print(" cm");
+  Serial.print("\t");
+  Serial.print("Sensor 2 Reading: ");
+  Serial.print(dist_2);
+  Serial.println(" cm");
+  */
+  if (deriv_arr_avg_1 > milestone_threshold) {
     Serial.print("Sensor 1: Moving away");
   }
-  else if (deriv_arr_1_avg < -milestone_threshold) {
+  else if (deriv_arr_avg_1 < -milestone_threshold) {
     Serial.print("Sensor 1: Moving towards");
   }
   else {
@@ -173,17 +183,16 @@ void loop() {
   }
   Serial.print('\t');
 
-  if (deriv_arr_2_avg > milestone_threshold) {
+  if (deriv_arr_avg_2 > milestone_threshold) {
     Serial.print("Sensor 2: Moving away");
   }
-  else if (deriv_arr_2_avg < -milestone_threshold) {
+  else if (deriv_arr_avg_2 < -milestone_threshold) {
     Serial.print("Sensor 2: Moving towards");
   }
   else {
     Serial.print("Sensor 2: No motion");
   }
   Serial.println('\t');
-*/
 
   ++num_cycles;
   delay(10);
