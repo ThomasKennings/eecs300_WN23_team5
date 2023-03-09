@@ -91,13 +91,11 @@ void loop() {
     tof_2.clearInterrupt();
   }
 
-  // Calculate first and second derivatives
+  // Calculate first derivatives
   old_deriv_1 = deriv_1;
   old_deriv_2 = deriv_2;
   deriv_1 = dist_1 - old_dist_1;
   deriv_2 = dist_2 - old_dist_2;
-  // second_deriv_1 = deriv_arr_avg_1 - old_deriv_arr_avg_1;
-  // second_deriv_2 = deriv_arr_avg_1 - old_deriv_arr_avg_2;
 
   // Moving average filter applied to first derivatives
   deriv_arr_1[num_cycles % deriv_arr_length] = deriv_1;
@@ -144,14 +142,13 @@ void loop() {
     last_occupant_millis_1 = 0;
   }
 
-/*
   // Displaying debug information
-  Serial.print(250);
+  Serial.print(250);  // +/- constant so that serial plotter window doesn't shrink too much
   Serial.print('\t');
   Serial.print(-250);
   Serial.print('\t');
-  //Serial.print(dist_1);
-  //Serial.print('\t');
+  Serial.print(dist_1);
+  Serial.print('\t');
   Serial.print(deriv_arr_avg_1);
   Serial.print('\t');
   Serial.print(accumulator_pos_1);
@@ -160,7 +157,9 @@ void loop() {
   Serial.print('\t');
   Serial.print(occupancy);
   Serial.println(" ");
-  */
+
+  ++num_cycles;
+  delay(10);
 
   // Terminal output for Milestone 1 Tests
   /*
@@ -171,7 +170,7 @@ void loop() {
   Serial.print("Sensor 2 Reading: ");
   Serial.print(dist_2);
   Serial.println(" cm");
-  */
+  
   if (deriv_arr_avg_1 > milestone_threshold) {
     Serial.print("Sensor 1: Moving away");
   }
@@ -193,7 +192,5 @@ void loop() {
     Serial.print("Sensor 2: No motion");
   }
   Serial.println('\t');
-
-  ++num_cycles;
-  delay(10);
+  */
 }
