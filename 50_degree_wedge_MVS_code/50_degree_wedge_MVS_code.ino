@@ -5,13 +5,13 @@ const int GPIO_PIN_1 = 25;                      // beware communication, etc. pi
 const int XSHUT_PIN_1 = 26;
 const int GPIO_PIN_2 = 32;
 const int XSHUT_PIN_2 = 33;
-const int deriv_arr_length = 1;                // longer array rejects noise but creates lag
+const int deriv_arr_length = 5;                // longer array rejects noise but creates lag
 const int tof_1_timing_budget = 100;             // Valid timing budgets: 15, 20, 33, 50, 100, 200 and 500 (ms)
 const int tof_2_timing_budget = 100;             // Valid timing budgets: 15, 20, 33, 50, 100, 200 and 500 (ms)
 const double milestone_threshold = 20;          // used for milestone 1 test
 const double deriv_accumulation_threshold = 15; // how high deriv must be to begin accumulation
 const double deriv_debounce_threshold = 15;     // if deriv is below this, debounce is cancelled
-const int accumulator_threshold = 23;           // how high accumulators must climb to trigger occupancy change
+const int accumulator_threshold = 30;           // how high accumulators must climb to trigger occupancy change
 const int debounce_time_millis = 5000;          // when occupancy changes, how long to block continued accumulation in the same direction
 
 // Variables
