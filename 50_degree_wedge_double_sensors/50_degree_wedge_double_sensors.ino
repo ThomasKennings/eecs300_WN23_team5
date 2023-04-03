@@ -1,11 +1,14 @@
 #include "Adafruit_VL53L1X.h"
 
+// timing condition on occupancy events to replace percent difference condition
+// AND distance threshold for accumulation
+
 // Const Parameters
 const int GPIO_PIN_1 = 25;                      // beware communication, etc. pins on the ESP32
 const int XSHUT_PIN_1 = 26;
 const int GPIO_PIN_2 = 32;
 const int XSHUT_PIN_2 = 33;
-const int deriv_arr_length = 1;                 // longer array rejects noise but creates lag
+const int deriv_arr_length = 1;                 // can be used to do moving average on derivatives
 const int tof_1_timing_budget = 100;            // Valid timing budgets: 15, 20, 33, 50, 100, 200 and 500 (ms)
 const int tof_2_timing_budget = 100;            // Valid timing budgets: 15, 20, 33, 50, 100, 200 and 500 (ms)
 const int deriv_accumulation_threshold = 15;
@@ -13,7 +16,7 @@ const double acc_threshold_pos = 30;            // how high deriv must be to beg
 const double acc_threshold_neg = 30;            // how high deriv must be to begin accumulation
 const double deriv_debounce_threshold = 15;     // if deriv is below this, debounce is cancelled
 const int debounce_time_millis = 5000;          // when occupancy changes, how long to block continued accumulation in the same direction
-const double dist_diff_percent_threshold = 50;  // if sensor readings are this similar, then we think both sensors are measuring the same person
+const double pair_timing_threshold_millis = 250;      // how close occupancy events must be for the most recent one to get undone (considered a double-count)
 
 // Variables
 Adafruit_VL53L1X tof_1 = Adafruit_VL53L1X(XSHUT_PIN_1, GPIO_PIN_1);
@@ -43,6 +46,10 @@ int accumulator_neg_2;
 int occupancy;
 int last_occupant_millis_1;
 int last_occupant_millis_2;
+int last_occupant_millis_1_actual;
+int last_occupant_millis_2_actual;
+int last_occupancy_sign_1;
+int last_occupancy_sign_2;
 int num_cycles = 0;
 int last_micros = 0;
 int this_micros = 0;
@@ -151,24 +158,20 @@ void loop() {
     }
   }
 
-/*
-If dists are similar:
-both still accumulate, in case person walks to either side
-if dists are too similar when occupancy events fire, only accept one occupancy events
-  block sensor 2's (chosen arbitrarily) occupancy changes (not the entire occupancy event)
-
-*/
-
   // Occupancy event logic for ToF 1
   if (accumulator_pos_1 > acc_threshold_pos) {
     ++occupancy;
+    last_occupancy_sign_1 = 1;
     accumulator_pos_1 = 0;
     last_occupant_millis_1 = millis();
+    last_occupant_millis_1_actual = millis();
   }
   if (accumulator_neg_1 > acc_threshold_neg) {
     --occupancy;
+    last_occupancy_sign_1 = -1;
     accumulator_neg_1 = 0;
     last_occupant_millis_1 = millis();
+    last_occupant_millis_1_actual = millis();
   }
   if (abs(deriv_arr_avg_1) < deriv_debounce_threshold) {
     last_occupant_millis_1 = 0;
@@ -176,22 +179,33 @@ if dists are too similar when occupancy events fire, only accept one occupancy e
 
   // Occupancy event logic for ToF 2
   if (accumulator_pos_2 > acc_threshold_pos) {
-    if (dist_diff_percent > dist_diff_percent_threshold) {    // don't take this sensor's occupancy changes if dists too similar (measuring the same person)
-      ++occupancy;
-    }
+    ++occupancy;
+    last_occupancy_sign_2 = 1;
     accumulator_pos_2 = 0;
     last_occupant_millis_2 = millis();
+    last_occupant_millis_2_actual = millis();
   }
   if (accumulator_neg_2 > acc_threshold_neg) {
-    if (dist_diff_percent > dist_diff_percent_threshold) {
-      --occupancy;
-    }
+    --occupancy;
+    last_occupancy_sign_2 = -1;
     accumulator_neg_2 = 0;
     last_occupant_millis_2 = millis();
+    last_occupant_millis_2_actual = millis();
   }
   if (abs(deriv_arr_avg_2) < deriv_debounce_threshold) {
     last_occupant_millis_2 = 0;
   }
+
+  // Check whether both sensors triggered occupancy in the same direction in rapid succession. If so, undo the action of the most recent
+  if ((abs(last_occupant_millis_1_actual - last_occupant_millis_2_actual) < pair_timing_threshold_millis) && (last_occupancy_sign_1 == last_occupancy_sign_2)) {
+    if (last_occupant_millis_1_actual > last_occupant_millis_2_actual) {  // tof 1 triggered last
+      occupancy -= last_occupancy_sign_1;
+    }
+    if (last_occupant_millis_2_actual > last_occupant_millis_1_actual) {  // tof 2 triggered last
+      occupancy -= last_occupancy_sign_2;
+    }
+  }
+
 
   // Displaying debug information
   Serial.print(1000);  // +/- constant so that serial plotter window doesn't shrink too much
