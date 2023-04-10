@@ -1,24 +1,29 @@
 #include "Adafruit_VL53L1X.h"
 
-// timing condition on occupancy events to replace percent difference condition
-// AND distance threshold for accumulation
+/*
+  - wireless
+  - remove old code
+  - make occupancy not go below zero
+  - remove delay(10)?
+  - target cases for final demonstration
+*/
 
 // Const Parameters
-const int GPIO_PIN_1 = 25;                      // beware communication, etc. pins on the ESP32
+const int GPIO_PIN_1 = 25;
 const int XSHUT_PIN_1 = 26;
 const int GPIO_PIN_2 = 32;
 const int XSHUT_PIN_2 = 33;
-const int deriv_arr_length = 1;                 // can be used to do moving average on derivatives
-const int tof_1_timing_budget = 100;            // Valid timing budgets: 15, 20, 33, 50, 100, 200 and 500 (ms)
-const int tof_2_timing_budget = 100;            // Valid timing budgets: 15, 20, 33, 50, 100, 200 and 500 (ms)
+const int tof_1_timing_budget = 100;                // Valid timing budgets: 15, 20, 33, 50, 100, 200 and 500 (ms)
+const int tof_2_timing_budget = 100;                // Valid timing budgets: 15, 20, 33, 50, 100, 200 and 500 (ms)
 const int deriv_accumulation_threshold = 15;
-const double acc_threshold_pos = 20;            // how high deriv must be to begin accumulation
-const double acc_threshold_neg = 20;            // how high deriv must be to begin accumulation
-const double deriv_debounce_threshold = 15;     // if deriv is below this, debounce is cancelled
-const int debounce_time_millis = 5000;          // when occupancy changes, how long to block continued accumulation in the same direction
-const double pair_timing_threshold_millis = 300;      // how close occupancy events must be for the most recent one to get undone (considered a double-count)
+const double acc_threshold_pos = 20;                // how high deriv must be to begin accumulation
+const double acc_threshold_neg = 20;                // how high deriv must be to begin accumulation
+const double deriv_debounce_threshold = 15;         // if deriv is below this, debounce is cancelled
+const int debounce_time_millis = 5000;              // when occupancy changes, how long to block continued accumulation in the same direction
+const double pair_timing_threshold_millis = 300;    // how close occupancy events must be for the most recent one to get undone (considered a double-count)
 const int pos_dist_threshold = 1800;                // distance beyond which distance measurements are ignored
 const int neg_dist_threshold = 1800;                // distance beyond which distance measurements are ignored
+const int direction_sign = -1;                // 1 or -1. Used to set direction corresponding to positive occupancy
 
 // Variables
 Adafruit_VL53L1X tof_1 = Adafruit_VL53L1X(XSHUT_PIN_1, GPIO_PIN_1);
@@ -26,21 +31,12 @@ Adafruit_VL53L1X tof_2 = Adafruit_VL53L1X(XSHUT_PIN_2, GPIO_PIN_2);
 int16_t temp;
 int16_t dist_1;
 int16_t dist_2;
-float dist_diff_percent;
 int16_t old_dist_1;
 int16_t old_dist_2;
 int16_t deriv_1;
 int16_t deriv_2;
 int16_t old_deriv_1;
 int16_t old_deriv_2;
-double second_deriv_1;
-double second_deriv_2;
-double old_deriv_arr_avg_1;
-double old_deriv_arr_avg_2;
-double deriv_arr_1[deriv_arr_length];
-double deriv_arr_2[deriv_arr_length];
-double deriv_arr_avg_1;
-double deriv_arr_avg_2;
 int accumulator_pos_1;
 int accumulator_neg_1;
 int accumulator_pos_2;
@@ -55,8 +51,6 @@ int previous_last_occupant_millis_2_actual;
 int last_occupancy_sign_1;
 int last_occupancy_sign_2;
 int num_cycles = 0;
-int last_micros = 0;
-int this_micros = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -116,29 +110,16 @@ void loop() {
   old_deriv_2 = deriv_2;
   deriv_1 = dist_1 - old_dist_1;
   deriv_2 = dist_2 - old_dist_2;
-  dist_diff_percent = 100.0*abs(dist_1 - dist_2)/max(dist_1, dist_2);
-
-  // Moving average filter applied to first derivatives
-  deriv_arr_1[num_cycles % deriv_arr_length] = deriv_1;
-  deriv_arr_2[num_cycles % deriv_arr_length] = deriv_2;
-  old_deriv_arr_avg_1 = deriv_arr_avg_1;
-  old_deriv_arr_avg_2 = deriv_arr_avg_2;
-  deriv_arr_avg_1 = 0;
-  deriv_arr_avg_2 = 0;
-  for (int i=0; i<deriv_arr_length; ++i) {
-    deriv_arr_avg_1 += deriv_arr_1[i] / (deriv_arr_length*1.0);
-    deriv_arr_avg_2 += deriv_arr_2[i] / (deriv_arr_length*1.0);
-  }
 
   // Accumulator logic for ToF 1
   if ((millis() - last_occupant_millis_1) > debounce_time_millis) {
-    if (deriv_arr_avg_1 > deriv_accumulation_threshold && dist_1 < pos_dist_threshold) {
+    if (deriv_1 > deriv_accumulation_threshold && dist_1 < pos_dist_threshold) {
       ++accumulator_pos_1;
     }
     else {
       accumulator_pos_1 = 0;
     }
-    if (deriv_arr_avg_1 < -deriv_accumulation_threshold && dist_1 < neg_dist_threshold) {
+    if (deriv_1 < -deriv_accumulation_threshold && dist_1 < neg_dist_threshold) {
       ++accumulator_neg_1;
     }
     else {
@@ -148,13 +129,13 @@ void loop() {
 
   // Accumulator logic for ToF 2
   if ((millis() - last_occupant_millis_2) > debounce_time_millis) {
-    if (deriv_arr_avg_2 > deriv_accumulation_threshold && dist_2 < pos_dist_threshold) {
+    if (deriv_2 > deriv_accumulation_threshold && dist_2 < pos_dist_threshold) {
       ++accumulator_pos_2;
     }
     else {
       accumulator_pos_2 = 0;
     }
-    if (deriv_arr_avg_2 < -deriv_accumulation_threshold && dist_2 < neg_dist_threshold) {
+    if (deriv_2 < -deriv_accumulation_threshold && dist_2 < neg_dist_threshold) {
       ++accumulator_neg_2;
     }
     else {
@@ -167,40 +148,40 @@ void loop() {
 
   // Occupancy event logic for ToF 1
   if (accumulator_pos_1 > acc_threshold_pos) {
-    ++occupancy;
-    last_occupancy_sign_1 = 1;
+    occupancy += direction_sign;
+    last_occupancy_sign_1 = direction_sign;
     accumulator_pos_1 = 0;
     last_occupant_millis_1 = millis();
     last_occupant_millis_1_actual = millis();
   }
   if (accumulator_neg_1 > acc_threshold_neg) {
-    --occupancy;
-    last_occupancy_sign_1 = -1;
+    occupancy -= direction_sign;
+    last_occupancy_sign_1 = -direction_sign;
     accumulator_neg_1 = 0;
     last_occupant_millis_1 = millis();
     last_occupant_millis_1_actual = millis();
   }
-  if (abs(deriv_arr_avg_1) < deriv_debounce_threshold) {
+  if (abs(deriv_1) < deriv_debounce_threshold) {
     last_occupant_millis_1 = 0;
   }
 
   // Occupancy event logic for ToF 2
   if (accumulator_pos_2 > acc_threshold_pos) {
-    ++occupancy;
-    last_occupancy_sign_2 = 1;
+    occupancy += direction_sign;
+    last_occupancy_sign_2 = direction_sign;
     accumulator_pos_2 = 0;
     last_occupant_millis_2 = millis();
     last_occupant_millis_2_actual = millis();
   }
   if (accumulator_neg_2 > acc_threshold_neg) {
-    --occupancy;
-    last_occupancy_sign_2 = -1;
+    occupancy -= direction_sign;
+    last_occupancy_sign_2 = -direction_sign;
     accumulator_neg_2 = 0;
     last_occupant_millis_2 = millis();
     
     last_occupant_millis_2_actual = millis();
   }
-  if (abs(deriv_arr_avg_2) < deriv_debounce_threshold) {
+  if (abs(deriv_2) < deriv_debounce_threshold) {
     last_occupant_millis_2 = 0;
   }
 
@@ -221,16 +202,11 @@ void loop() {
     }
   }
 
-
   // Displaying debug information
-  //Serial.print(1000);  // +/- constant so that serial plotter window doesn't shrink too much
-  //Serial.print('\t');
-  //Serial.print(-1000);
-  //Serial.print('\t');
   Serial.print("ToF 1: ");
   Serial.print(dist_1);
   //Serial.print('\t');
-  //Serial.print(deriv_arr_avg_1);
+  //Serial.print(deriv_1);
   Serial.print('\t');
   Serial.print(accumulator_pos_1);
   Serial.print('\t');
@@ -239,7 +215,7 @@ void loop() {
   Serial.print("ToF 2: ");
   Serial.print(dist_2);
   Serial.print('\t');
-  //Serial.print(deriv_arr_avg_2);
+  //Serial.print(deriv_2);
   //Serial.print('\t');
   Serial.print(accumulator_pos_2);
   Serial.print('\t');
@@ -253,12 +229,14 @@ void loop() {
   Serial.print('\t');
   Serial.print("last_occupant_millis_2: ");
   Serial.print(last_occupant_millis_2_actual);
+  /*
   Serial.print('\t');
   Serial.print("last_occupany_sign_1: ");
   Serial.print(last_occupancy_sign_1);
   Serial.print('\t');
   Serial.print("last_occupany_sign_2: ");
   Serial.print(last_occupancy_sign_2);
+  */
   Serial.println(" ");
 
   ++num_cycles;
