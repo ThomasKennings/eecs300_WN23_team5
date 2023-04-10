@@ -1,12 +1,13 @@
 #include "Adafruit_VL53L1X.h"
+#include "WirelessCommunication.h"
+#include "sharedVariable.h"
+#include "Preferences.h"
 
-/*
-  - wireless
-  - remove old code
-  - make occupancy not go below zero
-  - remove delay(10)?
-  - target cases for final demonstration
-*/
+#define BUTTON_PIN 0//boot button
+uint32_t is_pressed();
+void init_non_vol_storage();
+void update_non_vol_count();
+void update_button_count();
 
 // Const Parameters
 const int GPIO_PIN_1 = 25;
@@ -42,6 +43,9 @@ int accumulator_neg_1;
 int accumulator_pos_2;
 int accumulator_neg_2;
 int occupancy;
+volatile int count;
+volatile shared_uint32 x;
+Preferences nonVol;//used to store the count in nonvolatile memory
 int last_occupant_millis_1;
 int last_occupant_millis_2;
 int last_occupant_millis_1_actual;
@@ -55,6 +59,13 @@ int num_cycles = 0;
 void setup() {
   Serial.begin(115200);
   while (!Serial) delay(10);
+
+  pinMode(BUTTON_PIN, INPUT);
+  init_wifi_task();
+  init_non_vol_count();//initializes nonvolatile memory and retrieves latest
+  occupancy = 0;
+  count = 0;
+  INIT_SHARED_VARIABLE(x, count);//init shared variable used to tranfer info to WiFi core
 
   Wire.begin();
   if (! tof_1.begin(0x31, &Wire)) {
@@ -87,6 +98,16 @@ void setup() {
 }
 
 void loop() {
+  if (occupancy < 0) {
+    occupancy = 0;
+  }
+
+  //check if Boot button has been pressed and update values if needed
+  count = occupancy;
+  update_button_count();//update shared variable x (shared with WiFi task)
+  update_non_vol_count();//updates nonvolatile count 
+  //Serial.println(count);
+
   // Retrieve distance measurements from sensors
   if (tof_1.dataReady()) {
     old_dist_1 = dist_1;
@@ -224,6 +245,9 @@ void loop() {
   Serial.print("Occupancy: ");
   Serial.print(occupancy);
   Serial.print('\t');
+  Serial.print("Count: ");
+  Serial.print(count);
+  Serial.print('\t');
   Serial.print("last_occupant_millis_1: ");
   Serial.print(last_occupant_millis_1_actual);
   Serial.print('\t');
@@ -240,5 +264,27 @@ void loop() {
   Serial.println(" ");
 
   ++num_cycles;
-  delay(10);
+}
+
+//initializes nonvolatile memory and retrieves latest count
+void init_non_vol_count()
+{
+  nonVol.begin("nonVolData", false);//Create a “storage space” in the flash memory called "nonVolData" in read/write mode
+  count = nonVol.getUInt("count", 0);//attempts to retrieve "count" from nonVolData, sets it 0 if not found
+}
+
+//updates nonvolatile memery with lates value of count
+void update_non_vol_count()
+{
+  nonVol.putUInt("count", count);//write count to nonvolatile memory
+}
+
+//example code that updates a shared variable (which is printed to server)
+//under the hood, this implementation uses a semaphore to arbitrate access to x.value
+void update_button_count()
+{
+  //minimized time spend holding semaphore
+  LOCK_SHARED_VARIABLE(x);
+  x.value = count;
+  UNLOCK_SHARED_VARIABLE(x);   
 }
