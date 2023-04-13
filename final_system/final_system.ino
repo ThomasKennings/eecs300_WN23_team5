@@ -24,7 +24,8 @@ const int debounce_time_millis = 5000;              // when occupancy changes, h
 const double pair_timing_threshold_millis = 300;    // how close occupancy events must be for the most recent one to get undone (considered a double-count)
 const int pos_dist_threshold = 1800;                // distance beyond which distance measurements are ignored
 const int neg_dist_threshold = 1800;                // distance beyond which distance measurements are ignored
-const int direction_sign = -1;                // 1 or -1. Used to set direction corresponding to positive occupancy
+const int direction_sign = 1;                       // 1 or -1. Used to set direction corresponding to positive occupancy. +1 = sensor-side is "room"
+const int loop_delay_millis = 5;                    // milliseconds for delay()
 
 // Variables
 Adafruit_VL53L1X tof_1 = Adafruit_VL53L1X(XSHUT_PIN_1, GPIO_PIN_1);
@@ -54,7 +55,6 @@ int previous_last_occupant_millis_1_actual;
 int previous_last_occupant_millis_2_actual;
 int last_occupancy_sign_1;
 int last_occupancy_sign_2;
-int num_cycles = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -99,14 +99,13 @@ void setup() {
 
 void loop() {
   if (occupancy < 0) {
-    occupancy = 0;
+    //occupancy = 0;
   }
 
-  //check if Boot button has been pressed and update values if needed
   count = occupancy;
+  //check if Boot button has been pressed and update values if needed
   update_button_count();//update shared variable x (shared with WiFi task)
   update_non_vol_count();//updates nonvolatile count 
-  //Serial.println(count);
 
   // Retrieve distance measurements from sensors
   if (tof_1.dataReady()) {
@@ -168,14 +167,14 @@ void loop() {
   previous_last_occupant_millis_2_actual = last_occupant_millis_2_actual;
 
   // Occupancy event logic for ToF 1
-  if (accumulator_pos_1 > acc_threshold_pos) {
+  if (accumulator_pos_1 >= acc_threshold_pos) {
     occupancy += direction_sign;
     last_occupancy_sign_1 = direction_sign;
     accumulator_pos_1 = 0;
     last_occupant_millis_1 = millis();
     last_occupant_millis_1_actual = millis();
   }
-  if (accumulator_neg_1 > acc_threshold_neg) {
+  if (accumulator_neg_1 >= acc_threshold_neg) {
     occupancy -= direction_sign;
     last_occupancy_sign_1 = -direction_sign;
     accumulator_neg_1 = 0;
@@ -187,19 +186,18 @@ void loop() {
   }
 
   // Occupancy event logic for ToF 2
-  if (accumulator_pos_2 > acc_threshold_pos) {
+  if (accumulator_pos_2 >= acc_threshold_pos) {
     occupancy += direction_sign;
     last_occupancy_sign_2 = direction_sign;
     accumulator_pos_2 = 0;
     last_occupant_millis_2 = millis();
     last_occupant_millis_2_actual = millis();
   }
-  if (accumulator_neg_2 > acc_threshold_neg) {
+  if (accumulator_neg_2 >= acc_threshold_neg) {
     occupancy -= direction_sign;
     last_occupancy_sign_2 = -direction_sign;
     accumulator_neg_2 = 0;
     last_occupant_millis_2 = millis();
-    
     last_occupant_millis_2_actual = millis();
   }
   if (abs(deriv_2) < deriv_debounce_threshold) {
@@ -213,13 +211,17 @@ void loop() {
   ((previous_last_occupant_millis_1_actual != last_occupant_millis_1_actual) ||
   (previous_last_occupant_millis_2_actual != last_occupant_millis_2_actual)) && 
   (last_occupancy_sign_1 == last_occupancy_sign_2)) {
-    if (last_occupant_millis_1_actual > last_occupant_millis_2_actual) {  // tof 1 triggered last
-      occupancy -= last_occupancy_sign_1;
+    if (last_occupant_millis_1_actual >= last_occupant_millis_2_actual) {  // tof 1 triggered last
+      Serial.print("Occupancy BEFORE undoing: ");
+      Serial.println(occupancy);
       Serial.println("Undoing ToF 1");
+      occupancy -= last_occupancy_sign_1;
     }
     if (last_occupant_millis_2_actual > last_occupant_millis_1_actual) {  // tof 2 triggered last
-      occupancy -= last_occupancy_sign_2;
+      Serial.print("Occupancy BEFORE undoing: ");
+      Serial.println(occupancy);
       Serial.println("Undoing ToF 2");
+      occupancy -= last_occupancy_sign_2;
     }
   }
 
@@ -253,17 +255,15 @@ void loop() {
   Serial.print('\t');
   Serial.print("last_occupant_millis_2: ");
   Serial.print(last_occupant_millis_2_actual);
-  /*
   Serial.print('\t');
   Serial.print("last_occupany_sign_1: ");
   Serial.print(last_occupancy_sign_1);
   Serial.print('\t');
   Serial.print("last_occupany_sign_2: ");
   Serial.print(last_occupancy_sign_2);
-  */
   Serial.println(" ");
 
-  ++num_cycles;
+  delay(loop_delay_millis);
 }
 
 //initializes nonvolatile memory and retrieves latest count
