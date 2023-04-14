@@ -99,7 +99,7 @@ void setup() {
 
 void loop() {
   if (occupancy < 0) {
-    //occupancy = 0;
+    occupancy = 0;
   }
 
   count = occupancy;
