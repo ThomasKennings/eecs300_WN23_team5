@@ -225,11 +225,12 @@ void loop() {
     }
   }
 
+  
   // Displaying debug information
   Serial.print("ToF 1: ");
   Serial.print(dist_1);
-  //Serial.print('\t');
-  //Serial.print(deriv_1);
+  Serial.print('\t');
+  Serial.print(deriv_1);
   Serial.print('\t');
   Serial.print(accumulator_pos_1);
   Serial.print('\t');
@@ -238,8 +239,8 @@ void loop() {
   Serial.print("ToF 2: ");
   Serial.print(dist_2);
   Serial.print('\t');
-  //Serial.print(deriv_2);
-  //Serial.print('\t');
+  Serial.print(deriv_2);
+  Serial.print('\t');
   Serial.print(accumulator_pos_2);
   Serial.print('\t');
   Serial.print(accumulator_neg_2);
